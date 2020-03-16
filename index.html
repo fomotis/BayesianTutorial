@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>A Taste of Bayesian Inference</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Olusoji Oluwafemi Daniel, Owokotomo Olajumoke Evangelina" />
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <link href="libs/remark-css/fc.css" rel="stylesheet" />
+    <link href="libs/remark-css/robot-fonts.css" rel="stylesheet" />
+  </head>
+  <body>
+    <textarea id="source">
+
+
+
+
+
+background-image: url(pics/pic1.png)
+background-position: 4% 0%
+background-size: 350px
+
+
+class: inverse, right, bottom
+
+# A Taste of Bayesian Inference
+## with examples from Ecology using RStan
+&lt;br&gt;
+### Olusoji Oluwafemi Daniel `\(^{1,2}\)`, Owokotomo Olajumoke Evangelina `\(^{1}\)` &lt;br&gt; `\(^1\)`Center for Statistics, Data Science Institute, Hasselt University, &lt;br&gt; `\(^2\)`Research Unit in Evolutionary Biology (URBE), Universite De Namur. &lt;br&gt;oluwafemi.olusoji@uhasselt.be, oluwafemi.olusoji@unamur.be&lt;br&gt; https://github.com/fomotis/BayesianTutorial
+
+---
+
+class: center
+
+# Before we get started
+
+&lt;div class="figure" style="text-align: center"&gt;
+&lt;img src="pics/frequentists_vs_bayesians.png" alt="Just for fun" width="50%" height="50%" /&gt;
+&lt;p class="caption"&gt;Just for fun&lt;/p&gt;
+&lt;/div&gt;
+
+---
+
+class: center
+
+# Schools of thought in statistics
+
+.pull-left[
+
+`Frequentists`
+
+  - main figures = Ronald Fisher, Jerzy Neyman &amp; Ergon Pearson
+  &lt;br&gt;
+  - main tools = p-value, confidence interval
+  &lt;br&gt;
+  - ideology based on repetition
+
+]
+
+
+.pull-right[
+`Bayesians`
+  - main figures = Thomas Bayes, Simon Laplace
+    &lt;br&gt;
+  - main tool = Baye's rule/theorem 
+  &lt;br&gt;
+  - ideology based on `\(postrior \propto likelihood \times prior\)`
+
+]
+
+* There is also the liklihoodist, but liklihoodist + frequentist = classical approach to statistics.
+
+---
+
+# Bayes theorem
+
+`\(p(B|A) = \frac{p(A|B) p(B)}{ p(A|B) p(B) + p(A|B^c) p(B^c)}\)` or 
+`\(p(\theta | y) = \frac{L(\theta | y) p(\theta)}{\int L(\theta | y) p(\theta)}\)`
+
+&lt;img src="pics/equations.png" width="70%" height="70%" style="display: block; margin: auto;" /&gt;
+
+The theory that would not die. How Bayes rule cracked the enigma code, hunted down Russian submarines &amp; emerged triumphant from two centuries of controversy, Mc Grayne (2011).
+
+---
+
+# Major ingredients for Bayesian inference
+
+`Notations:` `\(\theta = parameter\)`, `\(y = data\)`, `\(p(.) = probability \  distribution\)`
+
+## The prior
+
+* can be based on historical data, personal belief or properties of the parameters of interest
+
+* equivalent to extra data depicting your belief about `\(\theta\)`
+
+* this concept forms the core of the criticsms against Byaesian methods 
+
+`Practically:` you have to express the prior in terms of a probability distribution, i.e. `\(\theta \sim p(\theta)\)`.
+
+---
+
+# Major ingredients for Bayesian inference
+
+## The likelihood
+
+* `\(L(\theta| y)\)` is obtained from the data you have at hand.
+
+`Practically:` `\(y\)` is assumed to follow some distribution, i.e. `\(y \sim p(y, \theta)\)`.
+
+## The posterior
+
+`\(p(\theta | y) \propto L(\theta| y) \times p(\theta)\)`
+
+* it contains all information about `\(\theta\)`
+
+* involves integration which can be quite complex even for the simplest of models.
+
+`Practically:` we use sampling or approximation methods to obtain samples from the posterior distribution, `\(p(\theta | y)\)`
+
+- sampling: Gibbs sampler (OpenBUGS, JAGS), MCMC sampling `(RStan)`
+
+- laplace approximations: INLA (Integrated Nested Laplace Approximations)
+
+---
+
+# Posterior summary measures
+
+Often, we use the follwoing summary measures as estimates for `\(\theta\)`
+
+## posterior mean
+
+`\(\bar{\theta} = \int_{\theta} \theta p(\theta | y) d\theta\)`
+ 
+- it is variant to monotone transformations
+
+`Practically:` `\(\bar{\theta}\)` is the typical souvenir you get from every bayesian software package.
+
+## posterior median
+
+`\(0.5 = \int_{\tilde{\theta}} p(\theta | y) d\theta\)`
+ 
+- it is invariant to monotone transformations
+
+`Practically:` `\(\tilde{\theta}\)` is another souvenir you get from every bayesian software package.
+
+---
+
+# Posterior summary measures
+
+## posterior mode
+
+`\(\hat{\theta} = arg \ max_\theta \ p(\theta | y)\)`
+ 
+- it is variant to monotone transformations
+
+`Practically:` `\(\hat{\theta}\)` is not a typical souvenir you get from every bayesian software package because it requires maximization.
+
+---
+
+# Posterior measure of variability
+
+## Posterior variance
+
+`\(\bar{\sigma}^2 = \int_{\theta} (\theta - \bar{\theta})^2 p(\theta | y) d\theta\)`
+
+`Practically:` `\(\bar{\sigma}^2\)` is another souvenir you get from every bayesian software package.
+
+---
+
+# Posterior measures of uncertainty
+
+`\([a, b] \backepsilon p(a \leq \theta \leq b | y) = 1 - \alpha\)`
+
+## Equal tail credible interval
+
+`\(p(\theta \leq a|y) = \frac{\alpha}{2}, \ p(\theta \geq b|y) = \frac{\alpha}{2}\)`
+
+`Practically:` another souvenir you get from every bayesian software package.
+
+- there might be `\(\theta\)` values with higher posterior probabilities outside `\([a, b]\)`
+
+## Highest posterior density interval
+
+`\([a, b] \backepsilon \forall \ \theta_1 \in [a, b], \theta_2 \notin [a, b], p(\theta_1 |y) \geq p(\theta_1 |y)\)`
+
+`Practically:` not often reported.
+
+- there are no `\(\theta\)` values with higher posterior probabilities outside `\([a, b]\)`
+
+---
+
+# Model comparison
+
+The typical tool is `Bayes factor`. Other methods include;
+
+- Deviance Information Criterion (DIC)
+
+- Posterior Predictive Checks (PPC)
+
+- Leave One Out cross validation (LOO)
+
+- Weighted Akaike Information Criterion (WAIC)
+
+---
+
+class: center, middle
+
+# An example
+
+---
+
+# The Data
+
+---
+
+# A Verhulst growth model 
+
+## Frequentist analysis
+
+## Bayesian analysis
+
+---
+
+# A Lotka-Voterra competition model
+
+## Frequentist analysis
+
+## Bayesian analysis
+
+---
+
+# A simple model comparison exercise
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  /* Replace <script> tags in slides area to make them executable
+   *
+   * Runs after post-processing of markdown source into slides and replaces only
+   * <script>s on the last slide of continued slides using the .has-continuation
+   * class added by xaringan. Finally, any <script>s in the slides area that
+   * aren't executed are commented out.
+   */
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container:not(.has-continuation) script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+  var scriptsNotExecuted = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container.has-continuation script'
+  );
+  if (!scriptsNotExecuted.length) return;
+  for (var i = 0; i < scriptsNotExecuted.length; i++) {
+    var comment = document.createComment(scriptsNotExecuted[i].outerHTML)
+    scriptsNotExecuted[i].parentElement.replaceChild(comment, scriptsNotExecuted[i])
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>

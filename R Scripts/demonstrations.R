@@ -1,0 +1,11 @@
+library(rstan)
+library(coda)
+library(bayesplot)
+library(bridgesampling)
+library(tidyverse)
+library(ggpubr)
+library(nlme)
+library(deSolve)
+
+rstan_options(auto_write = TRUE)
+options(mc.cores = parallel::detectCores(logical = FALSE))

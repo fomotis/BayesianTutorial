@@ -1,0 +1,295 @@
+---
+title: "A Taste of Bayesian Inference"
+subtitle: "with examples from Ecology using RStan"
+author: "Olusoji Oluwafemi Daniel, Owokotomo Olajumoke Evangelina"
+institute: "Center for Statistics, Data Science Institute, Hasselt University.<br>Research unit in Evolutionary Biology, Universite De Namur."
+date: "2020-03-16 (updated: `r Sys.Date()`)"
+output:
+  xaringan::moon_reader:
+    css: [default, fc, robot-fonts]
+    lib_dir: libs
+    seal: false
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggpubr)
+library(png)
+library(grid)
+library(png)
+library(nlme)
+library(gridExtra)
+library(knitr)
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(echo = TRUE, 
+                      message = FALSE,	
+                      warning = FALSE)
+
+pdata <- data.frame(X = c(rnorm(200, 0, 2), rnorm(200, 5, 2), rnorm(200, 10, 2)), 
+           Distribution = c(rep("Prior", 50), rep("Posterior", 50), rep("Likelihood/Data", 50)) )
+
+pdata1 <- pdata %>% group_by(Distribution) %>% nest() 
+pdata1$Ret <- map2(.x = pdata1$Distribution, .y = pdata1$data, function(.x, .y) {
+  
+  dd <- density(unlist(.y))
+  x <- dd$x
+  y <- dd$y
+  return(data.frame(Distribution = rep(.x, length(x)), X = x, Y = y))
+  
+})
+
+p <- ggplot(data = do.call(rbind.data.frame, pdata1$Ret), 
+            aes(x = X, y = Y, group = Distribution, color = Distribution)) + 
+  geom_line(size = 50) + 
+  geom_text(x = 0, y = 0.085, label = "Prior", color = "orange3", size = 65) +
+  geom_text(x = 5, y = 0.10, label = "Posterior", color = "orange3", size = 65) + 
+  geom_text(x = 10.4, y = 0.089, label = "Data", color = "orange3", size = 65) +
+  theme_minimal() + 
+  ylim(0, 0.125) +
+  theme(
+    axis.line = element_line(color = NA),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    legend.position = "none",
+    legend.text = element_text(size = 60, face = "bold", colour = "orange3"),
+    legend.title = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA), # bg of the panel
+    plot.background = element_rect(fill = "transparent", color = NA), # bg of the plot
+    panel.grid.major = element_blank(), # get rid of major grid
+    panel.grid.minor = element_blank(), # get rid of minor grid
+    legend.background = element_rect(fill = "transparent",color = NA), # get rid of legend bg
+    legend.box.background = element_rect(fill = "transparent", color = NA) # get rid of legend panel bg
+  ) + 
+  color_palette("Dark2")
+ggsave(p, filename = "pics/pic1.png",  bg = "transparent", width = 45, height = 45)
+```
+
+background-image: url(pics/pic1.png)
+background-position: 4% 0%
+background-size: 350px
+
+
+class: inverse, right, bottom
+
+# A Taste of Bayesian Inference
+## with examples from Ecology using RStan
+<br>
+### Olusoji Oluwafemi Daniel $^{1,2}$, Owokotomo Olajumoke Evangelina $^{1}$ <br> $^1$Center for Statistics, Data Science Institute, Hasselt University, <br> $^2$Research Unit in Evolutionary Biology (URBE), Universite De Namur. <br>oluwafemi.olusoji@uhasselt.be, oluwafemi.olusoji@unamur.be<br> https://github.com/fomotis/BayesianTutorial
+
+---
+
+class: center
+
+# Before we get started
+
+```{r frvsby, out.width = "50%", out.height = "50%", fig.align='center', fig.cap= "Just for fun", echo=FALSE}
+im1 <- "pics/frequentists_vs_bayesians.png"
+img1 <- readPNG(im1, native = TRUE, info = TRUE)
+include_graphics(im1)
+```
+
+---
+
+class: center
+
+# Schools of thought in statistics
+
+.pull-left[
+
+`Frequentists`
+
+  - main figures = Ronald Fisher, Jerzy Neyman & Ergon Pearson
+  <br>
+  - main tools = p-value, confidence interval
+  <br>
+  - ideology based on repetition
+
+]
+
+
+.pull-right[
+`Bayesians`
+  - main figures = Thomas Bayes, Simon Laplace
+    <br>
+  - main tool = Baye's rule/theorem 
+  <br>
+  - ideology based on $postrior \propto likelihood \times prior$
+
+]
+
+* There is also the liklihoodist, but liklihoodist + frequentist = classical approach to statistics.
+
+---
+
+# Bayes theorem
+
+$p(B|A) = \frac{p(A|B) p(B)}{ p(A|B) p(B) + p(A|B^c) p(B^c)}$ or 
+$p(\theta | y) = \frac{L(\theta | y) p(\theta)}{\int L(\theta | y) p(\theta)}$
+
+```{r bayestheorem, out.width = "70%", out.height = "70%", fig.align='center', echo=FALSE}
+im2 <- "pics/equations.png"
+img2 <- readPNG(im1, native = TRUE, info = TRUE)
+include_graphics(im2)
+```
+
+The theory that would not die. How Bayes rule cracked the enigma code, hunted down Russian submarines & emerged triumphant from two centuries of controversy, Mc Grayne (2011).
+
+---
+
+# Major ingredients for Bayesian inference
+
+`Notations:` $\theta = parameter$, $y = data$, $p(.) = probability \  distribution$
+
+## The prior
+
+* can be based on historical data, personal belief or properties of the parameters of interest
+
+* equivalent to extra data depicting your belief about $\theta$
+
+* this concept forms the core of the criticsms against Byaesian methods 
+
+`Practically:` you have to express the prior in terms of a probability distribution, i.e. $\theta \sim p(\theta)$.
+
+---
+
+# Major ingredients for Bayesian inference
+
+## The likelihood
+
+* $L(\theta| y)$ is obtained from the data you have at hand.
+
+`Practically:` $y$ is assumed to follow some distribution, i.e. $y \sim p(y, \theta)$.
+
+## The posterior
+
+$p(\theta | y) \propto L(\theta| y) \times p(\theta)$
+
+* it contains all information about $\theta$
+
+* involves integration which can be quite complex even for the simplest of models.
+
+`Practically:` we use sampling or approximation methods to obtain samples from the posterior distribution, $p(\theta | y)$
+
+- sampling: Gibbs sampler (OpenBUGS, JAGS), MCMC sampling `(RStan)`
+
+- laplace approximations: INLA (Integrated Nested Laplace Approximations)
+
+---
+
+# Posterior summary measures
+
+Often, we use the follwoing summary measures as estimates for $\theta$
+
+## posterior mean
+
+$\bar{\theta} = \int_{\theta} \theta p(\theta | y) d\theta$
+ 
+- it is variant to monotone transformations
+
+`Practically:` $\bar{\theta}$ is the typical souvenir you get from every bayesian software package.
+
+## posterior median
+
+$0.5 = \int_{\tilde{\theta}} p(\theta | y) d\theta$
+ 
+- it is invariant to monotone transformations
+
+`Practically:` $\tilde{\theta}$ is another souvenir you get from every bayesian software package.
+
+---
+
+# Posterior summary measures
+
+## posterior mode
+
+$\hat{\theta} = arg \ max_\theta \ p(\theta | y)$
+ 
+- it is variant to monotone transformations
+
+`Practically:` $\hat{\theta}$ is not a typical souvenir you get from every bayesian software package because it requires maximization.
+
+---
+
+# Posterior measure of variability
+
+## Posterior variance
+
+$\bar{\sigma}^2 = \int_{\theta} (\theta - \bar{\theta})^2 p(\theta | y) d\theta$
+
+`Practically:` $\bar{\sigma}^2$ is another souvenir you get from every bayesian software package.
+
+---
+
+# Posterior measures of uncertainty
+
+$[a, b] \backepsilon p(a \leq \theta \leq b | y) = 1 - \alpha$
+
+## Equal tail credible interval
+
+$p(\theta \leq a|y) = \frac{\alpha}{2}, \ p(\theta \geq b|y) = \frac{\alpha}{2}$
+
+`Practically:` another souvenir you get from every bayesian software package.
+
+- there might be $\theta$ values with higher posterior probabilities outside $[a, b]$
+
+## Highest posterior density interval
+
+$[a, b] \backepsilon \forall \ \theta_1 \in [a, b], \theta_2 \notin [a, b], p(\theta_1 |y) \geq p(\theta_1 |y)$
+
+`Practically:` not often reported.
+
+- there are no $\theta$ values with higher posterior probabilities outside $[a, b]$
+
+---
+
+# Model comparison
+
+The typical tool is `Bayes factor`. Other methods include;
+
+- Deviance Information Criterion (DIC)
+
+- Posterior Predictive Checks (PPC)
+
+- Leave One Out cross validation (LOO)
+
+- Weighted Akaike Information Criterion (WAIC)
+
+---
+
+class: center, middle
+
+# An example
+
+---
+
+# The Data
+
+---
+
+# A Verhulst growth model 
+
+## Frequentist analysis
+
+## Bayesian analysis
+
+---
+
+# A Lotka-Voterra competition model
+
+## Frequentist analysis
+
+## Bayesian analysis
+
+---
+
+# A simple model comparison exercise
+
+
+
+
