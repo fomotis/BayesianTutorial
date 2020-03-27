@@ -25,6 +25,8 @@ library(png)
 library(nlme)
 library(gridExtra)
 library(knitr)
+library(rbokeh)
+library(rstan)
 options(htmltools.dir.version = FALSE)
 knitr::opts_chunk$set(echo = TRUE, 
                       message = FALSE,	
@@ -68,6 +70,7 @@ p <- ggplot(data = do.call(rbind.data.frame, pdata1$Ret),
   ) + 
   color_palette("Dark2")
 ggsave(p, filename = "pics/pic1.png",  bg = "transparent", width = 45, height = 45)
+load("RImage/Demonstration.RData")
 ```
 
 background-image: url(pics/pic1.png)
@@ -123,7 +126,7 @@ class: center
 
 ]
 
-* There is also the liklihoodist, but liklihoodist + frequentist = classical approach to statistics.
+* There is also the likelihoodist, but likelihoodist + frequentist = classical approach to statistics.
 
 ---
 
@@ -270,25 +273,509 @@ class: center, middle
 
 # The Data
 
+## Monoculture Cyanobacteria Experiment
+
+```{r expsetup, out.width = "70%", out.height = "50%", fig.align='center', echo=FALSE}
+im3 <- "pics/monoculture_experiment.PNG"
+img3 <- readPNG(im3, native = TRUE, info = TRUE)
+include_graphics(im3)
+```
+
+---
+
+# The Data
+
+## Biculture Cyanobacteria Experiment
+
+```{r, out.width = "70%", out.height = "50%", fig.align='center', echo=FALSE}
+im4 <- "Pics/biculture_experiment.PNG"
+img4 <- readPNG(im4, native = TRUE, info = TRUE)
+include_graphics(im4)
+```
+
+---
+
+# Interest
+
+- effect of temperature on the growth of the cyanobacteria cultures over time.
+
+<iframe src = 'html/abd.html' scrolling='no' seamless='seamless' width = 900 height = 500>
+
+
 ---
 
 # A Verhulst growth model 
 
-## Frequentist analysis
+$\frac{dN}{dt} = N (r - AN)$, $A = \frac{r}{K}$
 
-## Bayesian analysis
+- $A$, $K$ and $r$ are the intra-specific effect, carrrying capcity and intrinsic growth rate respectively
+
+- $N$ and $t$ are measured abundance of the cyanobacteria and time respectively
+
+- $\frac{r N_0 e^{rt}}{r - AN_0 (1 + AN_0 e^{rt})}$ is the solution to the above growth model
+
+- $\frac{KN_0}{N_0 + (K - N_0) e^{-rt}}$ is the solution expressed in terms of $r$ and $K$
+
+---
+
+class: center, middle
+
+# Frequentist analysis
+
+---
+
+## Notes
+
+- we write a function for the solution to the model and fit this using `gnls` function in the `nlme` package.
+
+- We will demonstrate the use of numerical solutions in the next example.
+
+- Best to formulate the model in terms of $r$ and $K$, since $A$ is correlated with both
+
+- We estimate $r$, $A$ and $K$ per temperature
+
+---
+
+## R Code using analytical solution
+
+```{r cod1, eval=FALSE, tidy=FALSE}
+SSLVE <- function(time, N0, r, K) { #<<
+    numerator <- K * N0 #<<
+    denominator <- N0 + ((K - N0) * exp(-r * time)) #<<
+    mu <- numerator / denominator #<<
+    return(mu) #<<
+} #<<
+
+
+ver_model <- gnls(ldensity ~ SSLVE(time = Time, N0, r, K), 
+                data = b5_mono_data, 
+                params = list(
+                              N0 ~ 1, 
+                              r ~ Temperature, #<<
+                              K ~ Temperature #<<
+                              ),
+                start = c(4.2, 0.22, 0.23, 0.36, 9, 0, 0),
+                correlation = NULL,
+                na.action = na.omit
+)
+```
+
+---
+
+## Parameter Estimates
+
+<iframe src = 'html/est_freq.html' width = 900 height = 500>
+
+---
+
+class: center, middle
+
+# Bayesian analysis 
+
+---
+
+## Notes
+
+* We will use the `rstan` package for the analysis
+
+* [rstan](https://mc-stan.org/users/interfaces/rstan.html) = R interface to [Stan](https://mc-stan.org/)
+
+* There is a special [group](https://stanecology.github.io/) and [guide](https://stanecology.github.io/) for Ecologist using Stan 
+
+* Stan is written in blocks. The important ones are; `data{}`, `parameters{}`, `model{}`
+
+* Other blocks are; `functions{}`, `transformed data{}`, `transformed parameters{}`, `generated quantities{}`
+
+* Visit the [quick start guide](https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started), [user's guide](https://mc-stan.org/docs/2_22/stan-users-guide/index.html), [reference manual](https://mc-stan.org/docs/2_22/reference-manual/index.html) and [functions reference](https://mc-stan.org/docs/2_22/functions-reference/index.html) for more on the use of Stan
+
+* First, we have to write the Stan code (good news for *C++* programmers) for the model before we compile and sample the model using `rstan` in R.
+
+---
+
+## The model in a familiar sense
+
+* The likelihood/data = $\tilde{N_t} \sim N( \frac{r N_0 e^{rt}}{r - AN_0 (1 + AN_0 e^{rt})}, \sigma^2_N )$
+
+* $r > 0$, $K > 0$, $\sigma^2_N > 0$ so we restrict them in the parameters block
+
+* Priors = $r \sim N(0, 1)$, $K \sim N(0, 5)$, $\sigma^2_N \sim Cauchy(0, 5)$
+
+* Priors were chosen based on EDA and known properties of these parameters
+
+---
+
+## Stan Code (data block)
+
+```{rstan, eval=FALSE}
+// input data
+
+data {  #<<
+
+    int<lower=0> N_obs; // number of observations
+    
+    //number of treatment groups
+    int<lower=0> n_trt;
+    
+    // response
+    real y_obs[N_obs];
+    
+    //design matrix for the whole treatment
+    matrix[N_obs, n_trt] trt;
+    
+    //time vector
+    vector[N_obs] time;
+}
+```
+---
+
+## Stan Code (parameters block)
+
+```{rstan, eval=FALSE}
+// The parameters accepted by the model
+
+parameters { #<<
+  
+  vector<lower=0>[n_trt] K; //Ks
+  vector<lower=0>[n_trt] r; //rs
+  real<lower=0> N0; //N0
+  real<lower=0> sigma_N; //residual variance  
+
+}
+```
+
+---
+
+## Stan Code (transformed parameters block)
+
+```{rstan, eval=FALSE}
+// The model to be estimated.
+
+transformed parameters { #<<
+
+  vector[N_obs] yhat_dens; //density mean value
+  vector[N_obs] numerator;
+  vector[N_obs] denominator;
+  vector[N_obs] K_trt;
+  vector[N_obs] r_trt;
+  
+  // estimate K and r per treatment level
+  K_trt = trt * K;
+  r_trt = trt * r;
+  numerator = N0 * K_trt;
+  
+  //mean function using the analytical solution
+  for (i in 1:N_obs) {
+    //mean function for density
+    denominator[i] = N0 + ((K_trt[i] - N0) * exp((-1 * r_trt[i]) * time[i]));
+    yhat_dens[i] = numerator[i] / denominator[i];
+    
+  }
+    
+}
+```
+
+---
+
+## Stan Code (model and generated quantities block)
+
+```{rstan, eval=FALSE}
+// The model to be estimated.
+
+model { #<<
+  
+  sigma_N ~ cauchy(0, 5); //prior for variance of abundance
+  r ~ std_normal(); //prior for rs
+  K ~ normal(0, 5); //prior for Ks
+  
+  for(i in 1:N_obs)
+    y_obs[i] ~ normal(yhat_dens[i], sigma_N); //the likelihood
+  
+}
+
+generated quantities { #<<
+  
+   vector<lower=0>[n_trt] A;
+  
+  for(i in 1:n_trt)
+    A[i] = r[i] / K[i]; // estimating the 
+  
+}
+```
+
+* this stan file is saved as **verhulst.stan** in the **stan_models** directory
+* Next we formulate and sample the posterior distribution using functions in the `rstan` package
+
+---
+
+## R Code
+
+```{r, eval=FALSE}
+X_obs <- b5_mono_data_nona %>% 
+  model.matrix(~I(Time^0.5):T_18 + I(Time^3):T_2022 + 
+                 I((Time^3) * log(Time)):T_2022 +
+                 T_18 + T_20 + T_22, data = . )
+verhulst_data <- list( #<<
+  N_obs = nrow(X_obs), #<<
+  y_obs = b5_mono_data_nona[, "ldensity"], #<<
+  trt = b5_mono_data_nona[, c("T_18", "T_20", "T_22")], #<<
+  time = b5_mono_data_nona$Time, #<<
+  n_trt = ncol(trt_mat)  #<<
+)
+init <- list( list(r = c(0.22, 0.23, 0.35)/2, K = c(9.72, 11.50, 10.99)/2), 
+              list(r = c(0.22, 0.23, 0.35)/3, K = c(9.72, 11.50, 10.99)/3
+           )
+# formulate model from stan file
+ret_mod <- stanc("stan_models/verhulst.stan") 
+sm <- stan_model(stanc_ret = ret_mod, verbose = FALSE)
+#sample from the formulate stan object
+sm_fit <- sampling(sm, #<<
+                   data = verhulst_data, #<<
+                   iter = 3000, #<<
+                   thin = 1, #<<
+                   control = list(max_treedepth = 13, adapt_delta = 0.98), #<<
+                   init = init, #<<
+                   chains = 2 #<<
+                  ) #<<
+```
+
+---
+
+## Important
+
+* Always check for convergence! Stan will also warn you if there were problems during sampling.
+
+```{r, out.width = "55%", out.height = "45%", fig.align='center', fig.cap="Trace plots for the parameters"}
+stan_trace(stan_verhulst, pars = c("K", "r", "A"))
+```
+
+---
+
+## Parameter Estimates
+
+<iframe src = 'html/est_bay.html' scrolling='no' seamless='seamless' width = 900 height = 500>
+
+---
+
+## Comparison of results
+
+<iframe src = 'html/est_bayfreq.html' scrolling='no' seamless='seamless' width = 900 height = 500>
 
 ---
 
 # A Lotka-Voterra competition model
 
-## Frequentist analysis
+$\frac{\delta \mathbf{N}}{\delta t} = \mathbf{N} \mathbf{r} (1 - \mathbf{A} \mathbf{N})$
 
-## Bayesian analysis
+* $\mathbf{N}$ is a vector of abundance for the cyanobacteria species, $\mathbf{r}$ is a vector of growth rates, $\mathbf{A}$ is a matrix of inter- and intraspecific effects. 
+
+* for 2 species we have, $\frac{d \mathbf{N}}{dt}  =  \left(\begin{array}{c} N_1 \\ N_2 \end{array} \right) \left(\begin{array}{c} r_1 \\ r_2 \end{array} \right) \left[1 - \left( \begin{array}{cc} \alpha_{11} & \alpha_{12}\\ \alpha_{21} & \alpha_{22} \end{array} \right)\left(\begin{array}{c} N_1 \\ N_2 \end{array} \right) \right]$
+
+* $\alpha_{11}$, $\alpha_{22}$ are intraspecific effects (effect of a species on itself), while $\alpha_{12}$, $\alpha_{21}$ are interspecific effects (effect of a species on the other species).
+
+* note that $\frac{\alpha_{12}}{\alpha_{22}} < 1 < \frac{\alpha_{11}}{\alpha_{21}}$ for a feasible coexistence equilibrium.
+
 
 ---
 
-# A simple model comparison exercise
+class: center, middle
+
+# Frequentist analysis 
+
+## Let's skip this for now
+
+---
+
+class: center, middle
+
+# Bayesian analysis 
+
+---
+
+## The model in a familiar sense
+
+* The likelihood/data = $\left(\begin{array}{c} N_1 \\ N_2 \end{array} \right) \sim BVN\left( \left( \begin{array}{c} \int{\frac{dN_1}{dt}} \\ \int{\frac{dN_2}{dt}} \end{array}\right)  , \Sigma_N \right)$, $\Sigma_N = \left( \begin{array}{cc} \sigma^2_{N_1} & \rho\sigma_{N_1}\sigma_{N_2}\\ \rho\sigma_{N_1}\sigma_{N_2} & \sigma^2_{N_2} \end{array} \right)$
+
+* $\frac{dN_1}{dt} = N_1r_1 (1 - (\alpha_{11}N_1 +  \alpha_{12}N_2))$ and $\frac{dN_2}{dt} = N_2r_2 (1 - (\alpha_{21}N_1 +  \alpha_{22}N_2))$
+
+* $r_i > 0$, $\alpha_{11} > \alpha_{21}$, $\alpha_{22} > \alpha_{12}$, $\alpha_{21} > 0$, $\alpha_{12} > 0$ , $\sigma^2_{N_i} > 0$, $i = 1, 2$ so we restrict them in the parameters block.
+
+* Priors = $r_i \sim N(0, 1)$, $\alpha_{12} \sim N(0, 1)$, $\alpha_{21} \sim N(0, 1)$, $\alpha_{11}, \alpha_{22}$ get Stan default priors
+
+* We parameterise $\Sigma_N$ in Cholesky form for stability (see [this](https://mc-stan.org/docs/2_22/stan-users-guide/multivariate-outcomes.html) for more details on this approach) thus, $\sigma^2_{N_i} \sim Cauchy(0, 5)$ and the correlation matrix gets a LKJ prior (see [this](https://mc-stan.org/docs/2_22/functions-reference/lkj-correlation.html) page for more details on the LKJ correlation distribution).
+
+---
+
+## Stan Code (functions block)
+
+```{rstan, eval = FALSE}
+// LVE
+functions { 
+  
+  real[] biLVE(real t,  //time 
+             real[] N,//state or abundance
+             real[] tetha, //parameters #<<
+             real[] x_r, //data (real)
+             int[] x_i //data (integer)
+             ) {
+               
+      real dNdt[2];
+      
+      
+      dNdt[1] =  N[1] * tetha[1] * (1 - (tetha[3]*N[1] + tetha[5]*N[2]) );
+      dNdt[2] =  N[2] * tetha[2] * (1 - (tetha[4]*N[1] + tetha[6]*N[2]) );
+      return dNdt;
+  }
+  
+}
+```
+
+---
+
+## Stan Code (data block)
+
+```{rstan, eval=FALSE}
+data {
+  
+  int<lower=0> N_obs; //N_obs
+  int<lower=0> T; //number of unique timepoints
+  
+  vector[2] N[N_obs]; //observed data
+  int<lower=0> nsp; //number of species
+  
+  real t0; // first time point
+  real ts[T]; // time to integrate ODE over
+  vector[N_obs] time_obs; //observed time point
+ 
+}
+```
+
+---
+
+## Stan Code (transformed data and parameters block)
+
+```{rstan, eval=FALSE}
+transformed data {
+  real x_r[0]; //for the ODE integrator function
+  int x_i[0]; //for the ODE integrator function
+}
+
+parameters {
+  
+  //growth rate parameters for the LVE model
+  real<lower=0> r[2];
+  
+  //interspecific parameters
+  real<lower=0> alpha12; 
+  real<lower=0> alpha21; 
+  
+  //intraspecific parameters
+  real<lower = alpha21> alpha11; 
+  real<lower = alpha12> alpha22; 
+  
+  real<lower=0> N0[nsp]; //starting values for both 
+  vector<lower=0>[nsp] sigma; //variance for the two species
+  cholesky_factor_corr[nsp] L_Omega; //for the correlation matrix
+  
+}
+```
+
+---
+
+## Stan Code (transformed parameters)
+
+```{rstan, eval=FALSE}
+
+transformed parameters {
+  
+    real N_LVE[T, nsp];
+    matrix[T, nsp] N_exp;
+    vector[nsp] N_hat[N_obs];
+    real tetha[6];
+  
+    tetha[1] = r[1]; #<<
+    tetha[2] = r[2]; #<<
+    tetha[3] = alpha11; #<<
+    tetha[4] = alpha21; #<<
+    tetha[5] = alpha12; #<<
+    tetha[6] = alpha22; #<<
+  
+    N_LVE = integrate_ode_rk45(biLVE, N0, t0, ts, tetha, x_r, x_i); #<<
+    N_exp = to_matrix(N_LVE);
+    
+    //setting the expected N_exp to N_LVE at the required time points
+    for(k in 1:T) {
+      for(j in 1:N_obs) {
+        
+        if(ts[k] == time_obs[j]) N_hat[j] = to_vector(N_exp[k, ]);
+        
+      }
+    }
+}
+```
+
+---
+
+## Stan Code (model block)
+
+```{rstan, eval=FALSE}
+model {
+  
+  matrix[2, 2] L_Sigma;
+  
+  //priors for the LVE parameters
+  
+  //interspecific effects
+  alpha12 ~ std_normal(); 
+  alpha21 ~ std_normal();
+  
+  r ~ std_normal(); //growth rates
+  
+  //priors for starting value
+  N0 ~ normal(0, 5);
+  
+  //priors for the variance-covariance matrix
+  //of the response in cholesky decomposition form
+  L_Omega ~ lkj_corr_cholesky(4);
+  L_Sigma = diag_pre_multiply(sigma, L_Omega);
+  sigma ~ cauchy(0, 2.5);
+  
+  
+  //and build the log-likelihood
+  N ~ multi_normal_cholesky(N_hat, L_Sigma); #<<
+  
+}
+```
+
+---
+
+Stan Code (generated quantities)
+
+```{rstan, eval=FALSE}
+
+generated quantities {
+  
+  matrix[2, 2] Sigma;
+  matrix[2, 2] L_Sigma;
+  real cor;
+  
+  //reconstructing the variance-covariance matrix from the chole
+  L_Sigma = diag_pre_multiply(sigma, L_Omega);
+  Sigma = L_Sigma * L_Sigma';
+  cor = Sigma[1,2] / pow(Sigma[1,1] * Sigma[2,2], 0.5);
+  
+}
+```
+
+---
+
+## Results
+
+<iframe src = 'html/est_bayLVE.html' scrolling='no' seamless='seamless' width = 900 height = 500>
+
+
+---
+
+## A simple model comparison exercise
 
 
 
